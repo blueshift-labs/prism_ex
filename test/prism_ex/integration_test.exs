@@ -3,14 +3,6 @@ defmodule Test.PrismEx.IntegrationTest do
 
   alias PrismEx.Util
 
-  setup_all do
-    {:ok, _pid} =
-      Application.get_all_env(:prism_ex)
-      |> PrismEx.start_link()
-
-    :ok
-  end
-
   describe "prism locking with process exit cleanup" do
     test "it locks on unowned resources" do
       tenant = "test_tenant"
@@ -125,6 +117,46 @@ defmodule Test.PrismEx.IntegrationTest do
 
       {:error, {:cache, :lock_taken}} = PrismEx.lock(tenant, keys)
       :ok = PrismEx.unlock(tenant, keys, global_id)
+    end
+  end
+
+  describe "test locking across multiple tenants" do
+    test "locking by pid" do
+      tenant1 = "test_tenant1"
+      tenant2 = "test_tenant2"
+      keys = [1, "test"]
+      contention_keys1 = [1,2,3]
+      contention_keys2 = ["test",2,3]
+
+      {:ok, :no_cache} = PrismEx.lock(tenant1, keys)
+      {:ok, :no_cache} = PrismEx.lock(tenant2, keys)
+
+      Task.async(fn ->
+        {:error, {:cache, :lock_taken}} = PrismEx.lock(tenant1, contention_keys1)
+        {:error, {:cache, :lock_taken}} = PrismEx.lock(tenant2, contention_keys2)
+      end)
+
+      :ok = PrismEx.unlock(tenant1, keys)
+      :ok = PrismEx.unlock(tenant2, keys)
+    end
+
+    test "lock by global_id" do
+      tenant1 = "test_tenant1"
+      tenant2 = "test_tenant2"
+      keys = [1, "test"]
+      contention_keys1 = [1,2,3]
+      contention_keys2 = ["test",2,3]
+      gid1 = Util.uuid()
+      gid2 = Util.uuid()
+
+      {:ok, :no_cache} = PrismEx.lock(tenant1, keys, gid1)
+      {:ok, :no_cache} = PrismEx.lock(tenant2, keys, gid1)
+
+      {:error, {:cache, :lock_taken}} = PrismEx.lock(tenant1, contention_keys1, gid2)
+      {:error, {:cache, :lock_taken}} = PrismEx.lock(tenant2, contention_keys2, gid2)
+
+      :ok = PrismEx.unlock(tenant1, keys, gid1)
+      :ok = PrismEx.unlock(tenant2, keys, gid1)
     end
   end
 end

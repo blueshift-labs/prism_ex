@@ -3,8 +3,9 @@ defmodule PrismEx do
   public api for prism_ex
   should only call functions defined here as a library consumer
   """
-  alias PrismEx.Server
   alias PrismEx.Supervisor
+  alias PrismEx.Cache.Registry, as: CacheRegistry
+  alias PrismEx.Cache.DynamicSupervisor
 
   def start_link(opts), do: Supervisor.start_link(opts)
   def child_spec(opts), do: Supervisor.child_spec(opts)
@@ -15,11 +16,30 @@ defmodule PrismEx do
   # opts:optional(keyword)
   def lock(tenant, keys, global_owner_id \\ nil, opts \\ []) do
     keys = MapSet.new(keys)
-    GenServer.call(Server, {:lock, tenant, keys, global_owner_id, opts})
+
+    {:ok, pid} =
+      case Registry.lookup(CacheRegistry, tenant) do
+        [] ->
+          DynamicSupervisor.start_child(tenant)
+
+        [{pid, _}] ->
+          {:ok, pid}
+      end
+
+    GenServer.call(pid, {:lock, tenant, keys, global_owner_id, opts})
   end
 
   def unlock(tenant, keys, global_owner_id \\ nil, opts \\ []) do
-    GenServer.call(Server, {:unlock, tenant, keys, global_owner_id, opts})
+    {:ok, pid} =
+      case Registry.lookup(CacheRegistry, tenant) do
+        [] ->
+          DynamicSupervisor.start_child(tenant)
+
+        [{pid, _}] ->
+          {:ok, pid}
+      end
+
+    GenServer.call(pid, {:unlock, tenant, keys, global_owner_id, opts})
   end
 
   def lock_command(owner) do

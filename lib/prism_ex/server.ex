@@ -4,11 +4,14 @@ defmodule PrismEx.Server do
   Initial design has a single process to simplify implementation for local caching
   before adding complexity for performance
   """
+  @registry PrismEx.Cache.Registry
+
   use GenServer
   alias PrismEx.LocalOwner
 
-  def start_link(opts) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  def start_link([name: name, opts: opts]) do
+    via = {:via, Registry, {@registry, name}}
+    GenServer.start_link(__MODULE__, opts, name: via)
   end
 
   @impl true

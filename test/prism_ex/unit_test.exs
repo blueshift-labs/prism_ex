@@ -4,10 +4,6 @@ defmodule Test.PrismEx.UnitTest do
   alias PrismEx.Util
 
   setup_all do
-    {:ok, _pid} =
-      Application.get_all_env(:prism_ex)
-      |> PrismEx.start_link()
-
     testing_opts = [
       testing: [
         lock: {:ok, :mocked_lock_reply},
@@ -49,6 +45,9 @@ defmodule Test.PrismEx.UnitTest do
 
       {:ok, :mocked_lock_reply} = PrismEx.lock(tenant, keys, global_id, opts)
       {:ok ,:mocked_unlock_reply} = PrismEx.unlock(tenant, keys, global_id, opts)
+
+      # :persistent_term.get(:prism_ex_default_opts)
+      # |> IO.inspect
     end
   end
 end

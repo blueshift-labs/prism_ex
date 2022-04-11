@@ -17,9 +17,11 @@ defmodule PrismEx.Supervisor do
     {pool_size, opts} = pop_in(opts, [:connection, :pool_size])
 
     children = [
-      :poolboy.child_spec(:redix_pool, pool_config(pool_size), opts[:connection]),
-      {Server, opts[:lock_defaults]}
+      PrismEx.Cache.Supervisor,
+      :poolboy.child_spec(:redix_pool, pool_config(pool_size), opts[:connection])
     ]
+
+    :persistent_term.put(:prism_ex_default_opts, opts[:lock_defaults])
 
     Supervisor.init(children, strategy: :one_for_one)
   end
