@@ -12,7 +12,7 @@ defmodule PrismEx.MixProject do
 
   def application do
     [
-      extra_applications: [:logger]
+      extra_applications: [:logger, :crypto]
     ]
   end
 
@@ -21,7 +21,7 @@ defmodule PrismEx.MixProject do
       {:credo, "~> 1.6", only: [:dev, :test], runtime: false},
       {:redix, "~> 1.1"},
       {:nimble_options, "~> 0.4.0"},
-      {:uuid, "~> 1.1"}
+      {:uuid, "~> 2.0", hex: :uuid_erl}
     ]
   end
 end

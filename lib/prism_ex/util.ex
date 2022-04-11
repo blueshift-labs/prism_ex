@@ -1,6 +1,7 @@
 defmodule PrismEx.Util do
   @moduledoc false
   def uuid do
-    UUID.uuid4()
+    :uuid.get_v4()
+    |> :uuid.uuid_to_string(:binary_standard)
   end
 end

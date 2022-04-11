@@ -26,3 +26,4 @@ prism_ex-*.tar
 /tmp/
 .envrc
 .rgignore
+.todo.txt

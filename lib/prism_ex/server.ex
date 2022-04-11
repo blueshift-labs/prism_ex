@@ -18,67 +18,66 @@ defmodule PrismEx.Server do
       %{
         opts: opts,
         owners: %{},
-        owned_resources: MapSet.new()
+        owned_resources: MapSet.new(),
+        ttl_timestamps: :gb_trees.empty()
       }
     }
   end
 
   @impl true
   def handle_call({:lock, tenant, keys, global_owner_id, opts}, {caller_pid, _ref}, state) do
+    state = cleanup_ttl(state)
     opts = Keyword.merge(state.opts, opts)
-    owner_struct = LocalOwner.build(tenant, caller_pid, keys, global_owner_id, state)
-    lock(owner_struct, opts, state)
+
+    owner = LocalOwner.build(:lock, tenant, caller_pid, keys, global_owner_id, opts, state)
+
+    Process.monitor(owner.pid)
+
+    case check_local_lock(owner, state) do
+      {:ok, :all_locally_owned} ->
+        {:reply, {:ok, :cache}, state}
+
+      {:ok, :not_all_locally_owned} ->
+        {reply, new_state} = check_prism_lock(owner, state)
+        {:reply, reply, new_state}
+
+      {:error, :resource_locally_owned_by_another} ->
+        {:reply, {:error, {:cache, :lock_taken}}, state}
+    end
   end
 
   @impl true
-  def handle_call({:unlock, tenant, keys, global_owner_id, opts}, {caller_pid, _}, state) do
+  def handle_call({:unlock, tenant, keys, global_id, opts}, {caller_pid, _}, state) do
+    state = cleanup_ttl(state)
     opts = Keyword.merge(state.opts, opts)
-    fallback_owner = LocalOwner.build(tenant, caller_pid, keys, global_owner_id, state)
 
-    owner_map =
+    owner = LocalOwner.build_default(:unlock, tenant, caller_pid, keys, global_id, opts)
+
+    owner =
       get_in(
         state,
         [
           :owners,
-          Access.key(caller_pid, %{fallback_owner => nil})
+          Access.key(owner.cache_group, %{}),
+          Access.key(owner.cache_key, %{owner.tenant => owner})
         ]
       )
 
-    owner =
-      owner_map
-      |> Map.keys()
-      |> List.first()
-
-    {_popped_owner, new_state} =
-      pop_in(
-        state,
-        [:owners, owner.pid]
-      )
-
     new_state =
-      update_in(
-        new_state,
-        [:owned_resources],
-        fn owned_resources ->
-          owner.owned_keys
-          |> Enum.reduce(owned_resources, fn cleanup, acc ->
-            MapSet.delete(acc, cleanup)
-          end)
-        end
-      )
+      state
+      |> cleanup_owned_resources([owner])
+      |> cleanup_owners([owner])
+      |> cleanup_timestamps([owner])
 
-    reply = PrismEx.unlock_command(owner, opts)
+    reply = PrismEx.unlock_command(owner)
 
     {:reply, reply, new_state}
   end
 
   @impl true
-  def handle_call(:get_state, _caller_pid, state) do
-    {:reply, state, state}
-  end
-
-  @impl true
   def handle_info({:DOWN, _ref, _type, pid, _reason}, state) do
+    state = cleanup_ttl(state)
+
     owners_linked_to_pid =
       get_in(
         state,
@@ -87,69 +86,49 @@ defmodule PrismEx.Server do
           Access.key(pid, %{})
         ]
       )
-
-    {cleanup_owners, do_not_cleanup} =
-      owners_linked_to_pid
-      |> Enum.reduce({%{}, %{}}, fn {owner, timestamp}, {cleanup_acc, dont_acc} ->
-        if owner.cleanup_on_process_exit? do
-          cleanup = Map.merge(cleanup_acc, %{owner => timestamp})
-          {cleanup, dont_acc}
-        else
-          dont = Map.merge(dont_acc, %{owner => timestamp})
-          {cleanup_acc, dont}
-        end
-      end)
-
-    # cleanup(
-
-    cleanup_owned_resources =
-      cleanup_owners
-      |> Enum.reduce([], fn {owner, _timestamp}, acc ->
-        owned_keys = MapSet.to_list(owner.owned_keys)
-        acc ++ owned_keys
-      end)
+      |> Map.values()
 
     new_state =
-      if do_not_cleanup == %{} do
-        {_, new_state} = pop_in(state, [Access.key(:owners, %{}), Access.key(pid, %{})])
-        new_state
-      else
-        put_in(state, [Access.key(:owners, %{}), Access.key(pid, %{})], do_not_cleanup)
-      end
-      |> update_in([:owned_resources], fn owned_resources ->
-        cleanup_owned_resources
-        |> Enum.reduce(owned_resources, fn key, acc ->
-          MapSet.delete(acc, key)
-        end)
-      end)
+      state
+      |> cleanup_owned_resources(owners_linked_to_pid)
+      |> cleanup_owners(owners_linked_to_pid)
+      |> cleanup_timestamps(owners_linked_to_pid)
 
-    cleanup_owners
-    |> Task.async_stream(fn {owner, _timestamp} ->
-      PrismEx.unlock_command(owner, state.opts)
+    owners_linked_to_pid
+    |> Task.async_stream(fn owner ->
+      PrismEx.unlock_command(owner)
     end)
     |> Stream.run()
 
     {:noreply, new_state}
   end
 
-  defp lock(owner, opts, state) do
-    Process.monitor(owner.pid)
+  defp cleanup_ttl(state) do
+    now = System.os_time(:microsecond)
+    gb_tree = state.ttl_timestamps
 
-    case check_local_lock(owner, opts, state) do
-      {:ok, :all_locally_owned} ->
-        {:reply, {:ok, {:cache, owner.global_id}}, state}
+    cleanups =
+      gb_tree
+      |> :gb_trees.to_list()
+      |> Enum.reduce_while([], fn {timestamp, owner}, acc ->
+        if timestamp <= now do
+          {:cont, [owner | acc]}
+        else
+          {:halt, acc}
+        end
+      end)
 
-      {:ok, :not_all_locally_owned} ->
-        {reply, new_state} = check_prism_lock(owner, opts, state)
-        {:reply, reply, new_state}
-
-      {:error, :resource_locally_owned_by_another} ->
-        {:reply, {:error, {:cache, :lock_taken}}, state}
-    end
+    state
+    |> cleanup_owned_resources(cleanups)
+    |> cleanup_owners(cleanups)
+    |> cleanup_timestamps(cleanups)
   end
 
-  defp check_local_lock(owner, _opts, state) do
-    not_locally_owned = MapSet.difference(owner.attempt_to_own_keys, owner.owned_keys)
+  # defp lock(owner, state) do
+  # end
+
+  defp check_local_lock(owner, state) do
+    not_locally_owned = MapSet.difference(owner.attempt_to_lock_keys, owner.owned_keys)
 
     if MapSet.size(not_locally_owned) == 0 do
       {:ok, :all_locally_owned}
@@ -164,13 +143,15 @@ defmodule PrismEx.Server do
     end
   end
 
-  defp check_prism_lock(owner, opts, state) do
-    PrismEx.lock_command(owner, opts)
+  defp check_prism_lock(owner, state) do
+    ttl_in_microseconds = owner[:ttl] * 1000
+    timestamp = System.os_time(:microsecond) + ttl_in_microseconds
+
+    PrismEx.lock_command(owner)
     |> case do
       {:ok, :locked} ->
-        new_state = update_state(owner, state)
-        reply = {:ok, owner.global_id}
-        {reply, new_state}
+        new_state = update_state(owner, timestamp, state)
+        {{:ok, :no_cache}, new_state}
 
       {:error, :lock_taken} ->
         reply = {:error, :lock_taken}
@@ -178,34 +159,83 @@ defmodule PrismEx.Server do
     end
   end
 
-  defp update_state(owner, old_state) do
-    now = DateTime.utc_now()
-    pid = owner.pid
-    new_owner = LocalOwner.successfully_locked(owner)
+  defp update_state(old_owner, timestamp, state) do
+    new_owner = LocalOwner.successfully_locked(old_owner, timestamp)
 
-    {_old_owner, new_state} =
-      pop_in(
-        old_state,
-        [
-          Access.key(:owners, %{}),
-          Access.key(owner.pid, %{}),
-          Access.key(owner, nil)
-        ]
-      )
+    state
+    |> update_owners(old_owner, new_owner)
+    |> update_owned_resources(old_owner)
+    |> update_ttl_timestamps(old_owner, new_owner)
+  end
 
-    new_state
-    |> put_in(
+  defp update_owners(state, old_owner, new_owner) do
+    put_in(
+      state,
       [
-        Access.key(:owners, %{}),
-        Access.key(pid, %{}),
-        Access.key(new_owner, nil)
+        :owners,
+        Access.key(old_owner.cache_group, %{}),
+        Access.key(old_owner.cache_key, nil)
       ],
-      now
+      new_owner
     )
-    |> update_in([:owned_resources], fn owned_resources ->
-      owner.attempt_to_own_keys
-      |> Enum.reduce(owned_resources, fn key, acc ->
-        MapSet.put(acc, key)
+  end
+
+  defp update_owned_resources(state, old_owner) do
+    update_in(
+      state,
+      [:owned_resources],
+      fn owned_resources ->
+        old_owner.attempt_to_lock_keys
+        |> Enum.reduce(owned_resources, fn key, acc ->
+          MapSet.put(acc, key)
+        end)
+      end
+    )
+  end
+
+  defp update_ttl_timestamps(state, old_owner, new_owner) do
+    update_in(
+      state,
+      [:ttl_timestamps],
+      fn gb_tree ->
+        if old_owner.cleanup_at == nil do
+          :gb_trees.insert(new_owner.cleanup_at, new_owner, gb_tree)
+        else
+          gb_tree = :gb_trees.delete_any(old_owner.cleanup_at, gb_tree)
+          :gb_trees.insert(new_owner.cleanup_at, new_owner, gb_tree)
+        end
+      end
+    )
+  end
+
+  defp cleanup_owned_resources(state, owners) do
+    old_owned_resources = state.owned_resources
+
+    new_owned_resources =
+      owners
+      |> Enum.reduce(old_owned_resources, fn owner, state_acc ->
+        owner.owned_keys
+        |> Enum.reduce(state_acc, fn key, inner_state_acc ->
+          MapSet.delete(inner_state_acc, key)
+        end)
+      end)
+
+    put_in(state, [:owned_resources], new_owned_resources)
+  end
+
+  defp cleanup_owners(state, owners) do
+    owners
+    |> Enum.reduce(state, fn owner, acc ->
+      {_, new_acc} = pop_in(acc, [:owners, owner.cache_group, owner.cache_key])
+      new_acc
+    end)
+  end
+
+  defp cleanup_timestamps(state, owners) do
+    owners
+    |> Enum.reduce(state, fn owner, acc ->
+      update_in(acc, [:ttl_timestamps], fn tree ->
+        :gb_trees.delete_any(owner.cleanup_at, tree)
       end)
     end)
   end

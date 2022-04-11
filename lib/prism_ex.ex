@@ -16,23 +16,22 @@ defmodule PrismEx do
   # keys:list
   # owner:optional(string)
   # opts:optional(keyword)
-  def lock(tenant, keys, owner_id \\ nil, opts \\ []) do
+  def lock(tenant, keys, global_owner_id \\ nil, opts \\ []) do
     keys = MapSet.new(keys)
-    GenServer.call(Server, {:lock, tenant, keys, owner_id, opts})
+    GenServer.call(Server, {:lock, tenant, keys, global_owner_id, opts})
   end
 
-  def unlock(tenant, keys, owner_id \\ nil, opts \\ []) do
-    GenServer.call(Server, {:unlock, tenant, keys, owner_id, opts})
+  def unlock(tenant, keys, global_owner_id \\ nil, opts \\ []) do
+    GenServer.call(Server, {:unlock, tenant, keys, global_owner_id, opts})
   end
 
-  def lock_command(owner, opts) do
-    ttl = Keyword.get(opts, :ttl)
-    namespace = Keyword.get(opts, :namespace)
-    tenant = owner.tenant
-    keys = MapSet.to_list(owner.attempt_to_own_keys)
-    owner_id = owner.global_id
+  def lock_command(owner) do
+    keys = MapSet.to_list(owner.attempt_to_lock_keys)
 
-    lock = ["LOCK", tenant, namespace] ++ keys ++ ["OWNER", owner_id, "TTL", ttl]
+    lock =
+      ["LOCK", owner.tenant, owner.namespace] ++
+        keys ++
+        ["OWNER", owner.global_id, "TTL", owner.ttl]
 
     Redix.command(:prism_conn, lock)
     |> case do
@@ -44,13 +43,17 @@ defmodule PrismEx do
     end
   end
 
-  def unlock_command(owner, opts) do
-    namespace = Keyword.get(opts, :namespace)
-    tenant = owner.tenant
+  def unlock_command(owner) do
     keys = MapSet.to_list(owner.owned_keys)
-    owner_id = owner.global_id
-    unlock = ["UNLOCK", tenant, namespace] ++ keys ++ ["OWNER", owner_id]
 
-    Redix.command(:prism_conn, unlock)
+    unlock =
+      ["UNLOCK", owner.tenant, owner.namespace] ++
+        keys ++
+        ["OWNER", owner.global_id]
+
+    case Redix.command(:prism_conn, unlock) do
+      {:ok, 1} -> :ok
+      {:ok, -1} -> :error
+    end
   end
 end
