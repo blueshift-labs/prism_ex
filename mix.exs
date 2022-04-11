@@ -21,7 +21,8 @@ defmodule PrismEx.MixProject do
       {:credo, "~> 1.6", only: [:dev, :test], runtime: false},
       {:redix, "~> 1.1"},
       {:nimble_options, "~> 0.4.0"},
-      {:uuid, "~> 2.0", hex: :uuid_erl}
+      {:uuid, "~> 2.0", hex: :uuid_erl},
+      {:poolboy, "~> 1.5"}
     ]
   end
 end

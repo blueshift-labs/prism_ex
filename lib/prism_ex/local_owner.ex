@@ -47,6 +47,7 @@ defmodule PrismEx.LocalOwner do
   def build(:unlock, tenant, pid, keys, global_id, opts, state) do
     cache_group = if global_id, do: :global, else: pid
     cache_key = if global_id, do: global_id, else: tenant
+
     local_owner =
       get_in(
         state,
@@ -54,11 +55,13 @@ defmodule PrismEx.LocalOwner do
           :owners,
           Access.key(cache_group, %{}),
           Access.key(
-            cache_key, 
+            cache_key,
             build_default(:unlock, tenant, pid, keys, global_id, opts)
           )
         ]
       )
+
+    struct(local_owner, %{attempt_to_unlock_keys: MapSet.new(keys)})
   end
 
   def successfully_locked(owner, timestamp) do

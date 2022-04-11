@@ -124,9 +124,6 @@ defmodule PrismEx.Server do
     |> cleanup_timestamps(cleanups)
   end
 
-  # defp lock(owner, state) do
-  # end
-
   defp check_local_lock(owner, state) do
     not_locally_owned = MapSet.difference(owner.attempt_to_lock_keys, owner.owned_keys)
 

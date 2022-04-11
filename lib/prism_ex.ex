@@ -6,11 +6,8 @@ defmodule PrismEx do
   alias PrismEx.Server
   alias PrismEx.Supervisor
 
-  defdelegate child_spec(opts), to: PrismEx.Supervisor
-
-  def start_link(opts) do
-    Supervisor.start_link(opts)
-  end
+  def start_link(opts), do: Supervisor.start_link(opts)
+  def child_spec(opts), do: Supervisor.child_spec(opts)
 
   # spec tenant:string
   # keys:list
@@ -33,14 +30,20 @@ defmodule PrismEx do
         keys ++
         ["OWNER", owner.global_id, "TTL", owner.ttl]
 
-    Redix.command(:prism_conn, lock)
-    |> case do
-      {:ok, [1, _owned_resources]} ->
-        {:ok, :locked}
+    worker = :poolboy.checkout(:redix_pool)
 
-      {:ok, _lock_contention} ->
-        {:error, :lock_taken}
-    end
+    reply =
+      Redix.command(worker, lock)
+      |> case do
+        {:ok, [1, _owned_resources]} ->
+          {:ok, :locked}
+
+        {:ok, _lock_contention} ->
+          {:error, :lock_taken}
+      end
+
+    :poolboy.checkin(:redix_pool, worker)
+    reply
   end
 
   def unlock_command(owner) do
@@ -51,9 +54,15 @@ defmodule PrismEx do
         keys ++
         ["OWNER", owner.global_id]
 
-    case Redix.command(:prism_conn, unlock) do
-      {:ok, 1} -> :ok
-      {:ok, -1} -> :error
-    end
+    worker = :poolboy.checkout(:redix_pool)
+
+    reply =
+      case Redix.command(worker, unlock) do
+        {:ok, 1} -> :ok
+        {:ok, -1} -> :error
+      end
+
+    :poolboy.checkin(:redix_pool, worker)
+    reply
   end
 end

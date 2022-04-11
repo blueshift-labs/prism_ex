@@ -14,12 +14,22 @@ defmodule PrismEx.Supervisor do
   @impl true
   def init(opts) do
     {:ok, opts} = Option.validate(opts)
+    {pool_size, opts} = pop_in(opts, [:connection, :pool_size])
 
     children = [
-      {Redix, opts[:connection]},
+      :poolboy.child_spec(:redix_pool, pool_config(pool_size), opts[:connection]),
       {Server, opts[:lock_defaults]}
     ]
 
     Supervisor.init(children, strategy: :one_for_one)
+  end
+
+  def pool_config(size) do
+    [
+      name: {:local, :redix_pool},
+      worker_module: Redix,
+      size: size,
+      max_overflow: 0
+    ]
   end
 end

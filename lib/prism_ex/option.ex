@@ -31,10 +31,6 @@ defmodule PrismEx.Option do
         required: true,
         type: :non_empty_keyword_list,
         keys: [
-          name: [
-            required: false,
-            type: :atom
-          ],
           host: [
             required: true,
             type: :string
@@ -42,6 +38,15 @@ defmodule PrismEx.Option do
           port: [
             required: true,
             type: :integer
+          ],
+          pool_size: [
+            required: false,
+            type: :integer,
+            default: 5,
+            doc: """
+            defines how many connections to open to prism and will distribute requests over
+            those connections.
+            """
           ]
         ]
       ]

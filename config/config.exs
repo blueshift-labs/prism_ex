@@ -2,7 +2,6 @@ import Config
 
 config :prism_ex,
   connection: [
-    name: :prism_conn,
     host: "localhost",
     port: 8379
   ],
