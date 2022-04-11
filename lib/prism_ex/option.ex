@@ -29,6 +29,18 @@ defmodule PrismEx.Option do
             namespace should usually give application metadata concerning the caller.
             e.g. "your_app_name:module_name"
             """
+          ],
+          caching: [
+            required: false,
+            default: :on,
+            type: {:in, [:on, :off]},
+            doc: """
+            note: only the global_id API supports turning off caching.
+            without caching then it's impossible to use the pid API because it requires
+            caching state to assocaite a pid to a uuid.
+
+            you can turn caching off entirely so that every call hits prism
+            """
           ]
         ]
       ],

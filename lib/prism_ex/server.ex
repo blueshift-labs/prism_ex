@@ -9,7 +9,7 @@ defmodule PrismEx.Server do
   use GenServer
   alias PrismEx.LocalOwner
 
-  def start_link([name: name, opts: opts]) do
+  def start_link(name: name, opts: opts) do
     via = {:via, Registry, {@registry, name}}
     GenServer.start_link(__MODULE__, opts, name: via)
   end
@@ -31,9 +31,22 @@ defmodule PrismEx.Server do
   def handle_call({:lock, tenant, keys, global_owner_id, opts}, {caller_pid, _ref}, state) do
     state = cleanup_ttl(state)
     opts = Keyword.merge(state.opts, opts)
-
+    caching = Keyword.get(opts, :caching, :on)
     owner = LocalOwner.build(:lock, tenant, caller_pid, keys, global_owner_id, opts, state)
 
+    do_lock(caching, owner, opts, state)
+  end
+
+  @impl true
+  def handle_call({:unlock, tenant, keys, global_id, opts}, {caller_pid, _}, state) do
+    state = cleanup_ttl(state)
+    opts = Keyword.merge(state.opts, opts)
+    caching = Keyword.get(opts, :caching, :on)
+    owner = LocalOwner.build(:unlock, tenant, caller_pid, keys, global_id, opts, state)
+    do_unlock(caching, owner, opts, state)
+  end
+
+  defp do_lock(:on, owner, opts, state) do
     Process.monitor(owner.pid)
 
     case check_local_lock(owner, state) do
@@ -49,23 +62,12 @@ defmodule PrismEx.Server do
     end
   end
 
-  @impl true
-  def handle_call({:unlock, tenant, keys, global_id, opts}, {caller_pid, _}, state) do
-    state = cleanup_ttl(state)
-    opts = Keyword.merge(state.opts, opts)
+  defp do_lock(:off, owner, opts, state) do
+    {reply, new_state} = check_prism_lock(owner, opts, state)
+    {:reply, reply, new_state}
+  end
 
-    owner = LocalOwner.build_default(:unlock, tenant, caller_pid, keys, global_id, opts)
-
-    owner =
-      get_in(
-        state,
-        [
-          :owners,
-          Access.key(owner.cache_group, %{}),
-          Access.key(owner.cache_key, %{owner.tenant => owner})
-        ]
-      )
-
+  defp do_unlock(:on, owner, opts, state) do
     new_state =
       state
       |> cleanup_owned_resources([owner])
@@ -76,11 +78,25 @@ defmodule PrismEx.Server do
       case Keyword.get(opts, :testing, nil) do
         list when is_list(list) ->
           Keyword.get(list, :unlock)
+
         _ ->
           PrismEx.unlock_command(owner)
       end
 
     {:reply, reply, new_state}
+  end
+
+  defp do_unlock(:off, owner, opts, state) do
+    reply =
+      case Keyword.get(opts, :testing, nil) do
+        list when is_list(list) ->
+          Keyword.get(list, :unlock)
+
+        _ ->
+          PrismEx.unlock_command(owner)
+      end
+
+    {:reply, reply, state}
   end
 
   @impl true
@@ -96,6 +112,9 @@ defmodule PrismEx.Server do
         ]
       )
       |> Map.values()
+      |> Enum.map(fn owner ->
+        struct(owner, %{attempt_to_unlock_keys: owner.owned_keys})
+      end)
 
     new_state =
       state
@@ -155,22 +174,31 @@ defmodule PrismEx.Server do
 
     case Keyword.get(opts, :testing, nil) do
       list when is_list(list) ->
-        do_check_prism_lock({:testing, list[:lock]}, {owner, timestamp, state})
+        do_check_prism_lock({:testing, list[:lock]}, {owner, timestamp, state}, opts)
+
       _ ->
-        do_check_prism_lock(nil, {owner, timestamp, state})
+        do_check_prism_lock(nil, {owner, timestamp, state}, opts)
     end
   end
 
-  defp do_check_prism_lock({:testing, mocked_reply}, {owner, timestamp, state}) do
+  defp do_check_prism_lock({:testing, mocked_reply}, {owner, timestamp, state}, _opts) do
     new_state = update_state(owner, timestamp, state)
     {mocked_reply, new_state}
   end
 
-  defp do_check_prism_lock(_, {owner, timestamp, state}) do
+  defp do_check_prism_lock(_, {owner, timestamp, state}, opts) do
+    caching = Keyword.get(opts, :caching, :on)
+
     PrismEx.lock_command(owner)
     |> case do
       {:ok, :locked} ->
-        new_state = update_state(owner, timestamp, state)
+        new_state =
+          if caching == :on do
+            update_state(owner, timestamp, state)
+          else
+            state
+          end
+
         {{:ok, :no_cache}, new_state}
 
       {:error, :lock_taken} ->

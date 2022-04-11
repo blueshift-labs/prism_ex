@@ -60,12 +60,9 @@ defmodule PrismEx do
   end
 
   def unlock_command(owner) do
-    keys = MapSet.to_list(owner.owned_keys)
+    keys = MapSet.to_list(owner.attempt_to_unlock_keys)
 
-    unlock =
-      ["UNLOCK", owner.tenant, owner.namespace] ++
-        keys ++
-        ["OWNER", owner.global_id]
+    unlock = ["UNLOCK", owner.tenant, owner.namespace] ++ keys ++ ["OWNER", owner.global_id]
 
     case prism_command(unlock) do
       {:ok, 1} -> :ok

@@ -60,14 +60,14 @@ defmodule Test.PrismEx.IntegrationTest do
         |> Task.async()
         |> Task.await()
 
-      PrismEx.unlock(tenant, keys)
+      :ok = PrismEx.unlock(tenant, keys)
 
-      {:ok, :no_cache} =
-        fn ->
-          PrismEx.lock(tenant, keys)
-        end
-        |> Task.async()
-        |> Task.await()
+      fn ->
+        {:ok, :no_cache} = PrismEx.lock(tenant, keys)
+        :ok = PrismEx.unlock(tenant, keys)
+      end
+      |> Task.async()
+      |> Task.await()
     end
 
     test "it adds keys to existing lock" do
@@ -125,8 +125,8 @@ defmodule Test.PrismEx.IntegrationTest do
       tenant1 = "test_tenant1"
       tenant2 = "test_tenant2"
       keys = [1, "test"]
-      contention_keys1 = [1,2,3]
-      contention_keys2 = ["test",2,3]
+      contention_keys1 = [1, 2, 3]
+      contention_keys2 = ["test", 2, 3]
 
       {:ok, :no_cache} = PrismEx.lock(tenant1, keys)
       {:ok, :no_cache} = PrismEx.lock(tenant2, keys)
@@ -144,8 +144,8 @@ defmodule Test.PrismEx.IntegrationTest do
       tenant1 = "test_tenant1"
       tenant2 = "test_tenant2"
       keys = [1, "test"]
-      contention_keys1 = [1,2,3]
-      contention_keys2 = ["test",2,3]
+      contention_keys1 = [1, 2, 3]
+      contention_keys2 = ["test", 2, 3]
       gid1 = Util.uuid()
       gid2 = Util.uuid()
 
@@ -157,6 +157,19 @@ defmodule Test.PrismEx.IntegrationTest do
 
       :ok = PrismEx.unlock(tenant1, keys, gid1)
       :ok = PrismEx.unlock(tenant2, keys, gid1)
+    end
+  end
+
+  describe "test turning off caching" do
+    test "turn off caching" do
+      tenant = "test_tenant2"
+      keys = [1, "test"]
+      opts = [caching: :off]
+      global_id = Util.uuid()
+
+      {:ok, :no_cache} = PrismEx.lock(tenant, keys, global_id, opts)
+      {:ok, :no_cache} = PrismEx.lock(tenant, keys, global_id, opts)
+      :ok = PrismEx.unlock(tenant, keys, global_id, opts)
     end
   end
 end

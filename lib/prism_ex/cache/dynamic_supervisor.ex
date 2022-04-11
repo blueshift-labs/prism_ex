@@ -10,6 +10,7 @@ defmodule PrismEx.Cache.DynamicSupervisor do
   def start_child(name) do
     opts = :persistent_term.get(:prism_ex_default_opts)
     child = {Server, [name: name, opts: opts]}
+
     DynamicSupervisor.start_child(__MODULE__, child)
     |> case do
       {:ok, pid} -> {:ok, pid}
