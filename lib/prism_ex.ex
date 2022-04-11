@@ -30,20 +30,13 @@ defmodule PrismEx do
         keys ++
         ["OWNER", owner.global_id, "TTL", owner.ttl]
 
-    worker = :poolboy.checkout(:redix_pool)
+    case prism_command(lock) do
+      {:ok, [1, _owned_resources]} ->
+        {:ok, :locked}
 
-    reply =
-      Redix.command(worker, lock)
-      |> case do
-        {:ok, [1, _owned_resources]} ->
-          {:ok, :locked}
-
-        {:ok, _lock_contention} ->
-          {:error, :lock_taken}
-      end
-
-    :poolboy.checkin(:redix_pool, worker)
-    reply
+      {:ok, _lock_contention} ->
+        {:error, :lock_taken}
+    end
   end
 
   def unlock_command(owner) do
@@ -54,14 +47,15 @@ defmodule PrismEx do
         keys ++
         ["OWNER", owner.global_id]
 
+    case prism_command(unlock) do
+      {:ok, 1} -> :ok
+      {:ok, -1} -> :error
+    end
+  end
+
+  defp prism_command(cmd) do
     worker = :poolboy.checkout(:redix_pool)
-
-    reply =
-      case Redix.command(worker, unlock) do
-        {:ok, 1} -> :ok
-        {:ok, -1} -> :error
-      end
-
+    reply = Redix.command(worker, cmd)
     :poolboy.checkin(:redix_pool, worker)
     reply
   end

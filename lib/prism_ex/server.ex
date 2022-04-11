@@ -38,7 +38,7 @@ defmodule PrismEx.Server do
         {:reply, {:ok, :cache}, state}
 
       {:ok, :not_all_locally_owned} ->
-        {reply, new_state} = check_prism_lock(owner, state)
+        {reply, new_state} = check_prism_lock(owner, opts, state)
         {:reply, reply, new_state}
 
       {:error, :resource_locally_owned_by_another} ->
@@ -69,7 +69,13 @@ defmodule PrismEx.Server do
       |> cleanup_owners([owner])
       |> cleanup_timestamps([owner])
 
-    reply = PrismEx.unlock_command(owner)
+    reply =
+      case Keyword.get(opts, :testing, nil) do
+        list when is_list(list) ->
+          Keyword.get(list, :unlock)
+        _ ->
+          PrismEx.unlock_command(owner)
+      end
 
     {:reply, reply, new_state}
   end
@@ -140,10 +146,24 @@ defmodule PrismEx.Server do
     end
   end
 
-  defp check_prism_lock(owner, state) do
+  defp check_prism_lock(owner, opts, state) do
     ttl_in_microseconds = owner[:ttl] * 1000
     timestamp = System.os_time(:microsecond) + ttl_in_microseconds
 
+    case Keyword.get(opts, :testing, nil) do
+      list when is_list(list) ->
+        do_check_prism_lock({:testing, list[:lock]}, {owner, timestamp, state})
+      _ ->
+        do_check_prism_lock(nil, {owner, timestamp, state})
+    end
+  end
+
+  defp do_check_prism_lock({:testing, mocked_reply}, {owner, timestamp, state}) do
+    new_state = update_state(owner, timestamp, state)
+    {mocked_reply, new_state}
+  end
+
+  defp do_check_prism_lock(_, {owner, timestamp, state}) do
     PrismEx.lock_command(owner)
     |> case do
       {:ok, :locked} ->

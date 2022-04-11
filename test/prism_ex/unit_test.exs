@@ -8,16 +8,22 @@ defmodule Test.PrismEx.UnitTest do
       Application.get_all_env(:prism_ex)
       |> PrismEx.start_link()
 
-    :ok
+    testing_opts = [
+      testing: [
+        lock: {:ok, :mocked_lock_reply},
+        unlock: {:ok, :mocked_unlock_reply}
+      ]
+    ]
+    [opts: testing_opts]
   end
 
   describe "test local cache" do
-    test "cache should clear when <ttl> time passes for pid locks" do
+    test "cache should clear when <ttl> time passes for pid locks", %{opts: opts} do
       tenant = "test_tenant"
       keys = [1]
-      opts = [ttl: 100]
+      opts = Keyword.merge(opts, [ttl: 100])
 
-      {:ok, :no_cache} = PrismEx.lock(tenant, keys, nil, opts)
+      {:ok, :mocked_lock_reply} = PrismEx.lock(tenant, keys, nil, opts)
 
       Process.sleep(50)
 
@@ -27,22 +33,22 @@ defmodule Test.PrismEx.UnitTest do
 
       Process.sleep(50)
 
-      {:ok, :no_cache} = PrismEx.lock(tenant, keys, nil, opts)
-      :ok = PrismEx.unlock(tenant, keys, nil, opts)
+      {:ok, :mocked_lock_reply} = PrismEx.lock(tenant, keys, nil, opts)
+      {:ok ,:mocked_unlock_reply} = PrismEx.unlock(tenant, keys, nil, opts)
     end
 
-    test "cache should clear when <ttl> time passes for global_id locks" do
+    test "cache should clear when <ttl> time passes for global_id locks", %{opts: opts} do
       tenant = "test_tenant"
       keys = [1]
-      opts = [ttl: 100]
+      opts = Keyword.merge(opts, [ttl: 100])
       global_id = Util.uuid()
 
-      {:ok, :no_cache} = PrismEx.lock(tenant, keys, global_id, opts)
+      {:ok, :mocked_lock_reply} = PrismEx.lock(tenant, keys, global_id, opts)
 
       Process.sleep(100)
 
-      {:ok, :no_cache} = PrismEx.lock(tenant, keys, global_id, opts)
-      :ok = PrismEx.unlock(tenant, keys, global_id, opts)
+      {:ok, :mocked_lock_reply} = PrismEx.lock(tenant, keys, global_id, opts)
+      {:ok ,:mocked_unlock_reply} = PrismEx.unlock(tenant, keys, global_id, opts)
     end
   end
 end

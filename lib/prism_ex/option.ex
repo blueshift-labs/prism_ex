@@ -3,6 +3,11 @@ defmodule PrismEx.Option do
   option validations with nimble_options to give library users good error messages when they startup prism_ex
   with bad config values
   """
+
+  def validate(opts) do
+    NimbleOptions.validate(opts, schema())
+  end
+
   def schema do
     [
       lock_defaults: [
@@ -49,11 +54,30 @@ defmodule PrismEx.Option do
             """
           ]
         ]
+      ],
+      testing: [
+        required: false,
+        type: :keyword_list,
+        doc: """
+        these options should only be useful for mocking returns to network calls
+        """,
+        keys: [
+          lock_return: [
+            required: false,
+            type: :any,
+            doc: """
+            defines the return value from a prism network call for lock
+            """
+          ],
+          unlock_return: [
+            required: false,
+            type: :any,
+            doc: """
+            defines the return value from a prism network call for unlock
+            """
+          ]
+        ]
       ]
     ]
-  end
-
-  def validate(opts) do
-    NimbleOptions.validate(opts, schema())
   end
 end
