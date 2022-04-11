@@ -6,6 +6,7 @@ defmodule PrismEx do
   alias PrismEx.Supervisor
   alias PrismEx.Cache.Registry, as: CacheRegistry
   alias PrismEx.Cache.DynamicSupervisor
+  alias PrismEx.Telemetry
 
   def start_link(opts), do: Supervisor.start_link(opts)
   def child_spec(opts), do: Supervisor.child_spec(opts)
@@ -26,7 +27,9 @@ defmodule PrismEx do
           {:ok, pid}
       end
 
-    GenServer.call(pid, {:lock, tenant, keys, global_owner_id, opts})
+    Telemetry.span([:prism_ex, :lock], fn ->
+      GenServer.call(pid, {:lock, tenant, keys, global_owner_id, opts})
+    end, %{tenant: tenant})
   end
 
   def unlock(tenant, keys, global_owner_id \\ nil, opts \\ []) do
@@ -39,7 +42,9 @@ defmodule PrismEx do
           {:ok, pid}
       end
 
-    GenServer.call(pid, {:unlock, tenant, keys, global_owner_id, opts})
+    Telemetry.span([:prism_ex, :unlock], fn ->
+      GenServer.call(pid, {:unlock, tenant, keys, global_owner_id, opts})
+    end, %{tenant: tenant})
   end
 
   def lock_command(owner) do
