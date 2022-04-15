@@ -3,17 +3,15 @@ defmodule PrismEx.Supervisor do
 
   use Supervisor
 
-  alias PrismEx.Server
   alias PrismEx.Option
 
   def start_link(opts) do
-    {:ok, opts} = Option.validate(opts)
+    opts = Option.validate!(opts)
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
   @impl true
   def init(opts) do
-    {:ok, opts} = Option.validate(opts)
     {pool_size, opts} = pop_in(opts, [:connection, :pool_size])
 
     children = [

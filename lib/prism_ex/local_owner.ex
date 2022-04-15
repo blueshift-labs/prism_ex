@@ -64,6 +64,12 @@ defmodule PrismEx.LocalOwner do
     struct(local_owner, %{attempt_to_unlock_keys: MapSet.new(keys)})
   end
 
+  def refresh_ttl(owner, timestamp) do
+    cleanup_at = timestamp + owner.ttl * 1000
+
+    struct(owner, %{cleanup_at: cleanup_at})
+  end
+
   def successfully_locked(owner, timestamp) do
     owned_keys =
       owner.attempt_to_lock_keys
@@ -71,10 +77,12 @@ defmodule PrismEx.LocalOwner do
         MapSet.put(acc, key)
       end)
 
+    cleanup_at = timestamp + owner.ttl * 1000
+
     struct(owner, %{
       owned_keys: owned_keys,
       attempt_to_lock_keys: MapSet.new(),
-      cleanup_at: timestamp
+      cleanup_at: cleanup_at
     })
   end
 

@@ -4,8 +4,8 @@ defmodule PrismEx.Option do
   with bad config values
   """
 
-  def validate(opts) do
-    NimbleOptions.validate(opts, schema())
+  def validate!(opts) do
+    NimbleOptions.validate!(opts, schema())
   end
 
   def schema do
@@ -14,6 +14,42 @@ defmodule PrismEx.Option do
         required: true,
         type: :non_empty_keyword_list,
         keys: [
+          retry_config: [
+            required: false,
+            type: :non_empty_keyword_list,
+            default: [
+              backoff_growth: 50
+            ],
+            keys: [
+              max_retries: [
+                default: 5,
+                type: :integer,
+                required: false
+              ],
+              backoff_type: [
+                default: :linear,
+                type: {:in, [:linear, :exponential]},
+                required: false,
+                doc: """
+                linear: backoff_base + (attempt_int * backoff_growth)
+                exponential: backoff_base + (backoff_growth ^ attempt_int)
+                """
+                
+              ],
+              backoff_base: [
+                default: 50,
+                type: :integer,
+                required: false,
+                doc: "in milliseconds"
+              ],
+              backoff_growth: [
+                default: 200,
+                type: :integer,
+                required: false,
+                doc: "in milliseconds"
+              ]
+            ]
+          ],
           ttl: [
             type: :integer,
             required: true,

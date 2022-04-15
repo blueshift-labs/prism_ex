@@ -3,10 +3,12 @@ defmodule PrismEx do
   public api for prism_ex
   should only call functions defined here as a library consumer
   """
+
   alias PrismEx.Supervisor
   alias PrismEx.Cache.Registry, as: CacheRegistry
   alias PrismEx.Cache.DynamicSupervisor
   alias PrismEx.Telemetry
+  alias PrismEx.Util
 
   def start_link(opts), do: Supervisor.start_link(opts)
   def child_spec(opts), do: Supervisor.child_spec(opts)
@@ -16,38 +18,50 @@ defmodule PrismEx do
   # owner:optional(string)
   # opts:optional(keyword)
   def lock(tenant, keys, global_owner_id \\ nil, opts \\ []) do
-    keys = MapSet.new(keys)
+    opts =
+      :persistent_term.get(:prism_ex_default_opts)
+      |> Keyword.merge(opts)
 
-    {:ok, pid} =
-      case Registry.lookup(CacheRegistry, tenant) do
-        [] ->
-          DynamicSupervisor.start_child(tenant)
+    lock_func = fn ->
+      keys = MapSet.new(keys)
 
-        [{pid, _}] ->
-          {:ok, pid}
-      end
+      {:ok, pid} =
+        case Registry.lookup(CacheRegistry, tenant) do
+          [] ->
+            DynamicSupervisor.start_child(tenant)
 
-    Telemetry.span([:prism_ex, :lock], fn ->
-      GenServer.call(pid, {:lock, tenant, keys, global_owner_id, opts})
-    end, %{tenant: tenant})
+          [{pid, _}] ->
+            {:ok, pid}
+        end
+
+        GenServer.call(pid, {:lock, tenant, keys, global_owner_id, opts})
+    end
+
+    wrapped_retry_lock_func = fn ->
+      Util.retry(lock_func, opts, [:prism_ex, :lock], %{tenant: tenant})
+    end
+
+      Telemetry.span([:prism_ex, :lock], wrapped_retry_lock_func, %{tenant: tenant})
   end
 
   def unlock(tenant, keys, global_owner_id \\ nil, opts \\ []) do
-    {:ok, pid} =
-      case Registry.lookup(CacheRegistry, tenant) do
-        [] ->
-          DynamicSupervisor.start_child(tenant)
+    unlock_func = fn ->
+      {:ok, pid} =
+        case Registry.lookup(CacheRegistry, tenant) do
+          [] ->
+            DynamicSupervisor.start_child(tenant)
 
-        [{pid, _}] ->
-          {:ok, pid}
-      end
+          [{pid, _}] ->
+            {:ok, pid}
+        end
 
-    Telemetry.span([:prism_ex, :unlock], fn ->
       GenServer.call(pid, {:unlock, tenant, keys, global_owner_id, opts})
-    end, %{tenant: tenant})
+    end
+
+    Telemetry.span([:prism_ex, :unlock], unlock_func, %{tenant: tenant})
   end
 
-  def lock_command(owner) do
+  def lock_command(owner, opts) do
     keys = MapSet.to_list(owner.attempt_to_lock_keys)
 
     lock =
@@ -55,30 +69,50 @@ defmodule PrismEx do
         keys ++
         ["OWNER", owner.global_id, "TTL", owner.ttl]
 
-    case prism_command(lock) do
+    case prism_command(:lock, lock, owner.tenant, opts) do
       {:ok, [1, _owned_resources]} ->
+        Telemetry.count([:prism_ex, :lock, :success], 1, %{tenant: owner.tenant})
         {:ok, :locked}
 
       {:ok, _lock_contention} ->
+        Telemetry.count([:prism_ex, :lock, :failure], 1, %{tenant: owner.tenant})
         {:error, :lock_taken}
     end
   end
 
-  def unlock_command(owner) do
+  def unlock_command(owner, opts) do
     keys = MapSet.to_list(owner.attempt_to_unlock_keys)
 
     unlock = ["UNLOCK", owner.tenant, owner.namespace] ++ keys ++ ["OWNER", owner.global_id]
 
-    case prism_command(unlock) do
-      {:ok, 1} -> :ok
-      {:ok, -1} -> :error
+    case prism_command(:unlock, unlock, owner.tenant, opts) do
+      {:ok, 1} ->
+        Telemetry.count([:prism_ex, :unlock, :success], 1, %{tenant: owner.tenant})
+        :ok
+
+      {:ok, -1} ->
+        Telemetry.count([:prism_ex, :unlock, :failure], 1, %{tenant: owner.tenant})
+        :error
     end
   end
 
-  defp prism_command(cmd) do
-    worker = :poolboy.checkout(:redix_pool)
-    reply = Redix.command(worker, cmd)
-    :poolboy.checkin(:redix_pool, worker)
-    reply
+  defp prism_command(cmd_atom, cmd_list, tenant, opts) do
+    telemetry = [:prism_ex, :prism_request, cmd_atom]
+
+    attempt_fun = fn ->
+      with pid when is_pid(pid) <- :poolboy.checkout(:redix_pool, true, 5_000),
+           {:ok, _} = prism_reply <- Redix.command(pid, cmd_list) do
+        worker_pid = pid
+        {:ok, {prism_reply, worker_pid}}
+      else
+        :full ->
+          Telemetry.count([:prism_ex, :pool_checkout, :full], %{tenant: tenant})
+          :error
+      end
+    end
+
+    {:ok, {prism_reply, worker_pid}} = Util.retry(attempt_fun, opts, telemetry, %{tenant: tenant})
+    :poolboy.checkin(:redix_pool, worker_pid)
+    prism_reply
   end
 end

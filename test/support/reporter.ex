@@ -13,8 +13,8 @@ defmodule Test.Support.Reporter do
   end
 
   def handle_event([:prism_ex, :lock, event], measurements, metadata, _config) do
-    IO.inspect event, label: "event"
-    IO.inspect measurements, label: "measurements"
-    IO.inspect metadata, label: "metadata"
+    IO.inspect(event, label: "event")
+    IO.inspect(measurements, label: "measurements")
+    IO.inspect(metadata, label: "metadata")
   end
 end
