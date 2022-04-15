@@ -34,7 +34,6 @@ defmodule PrismEx.Option do
                 linear: backoff_base + (attempt_int * backoff_growth)
                 exponential: backoff_base + (backoff_growth ^ attempt_int)
                 """
-                
               ],
               backoff_base: [
                 default: 50,

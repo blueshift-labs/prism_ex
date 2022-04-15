@@ -34,14 +34,14 @@ defmodule PrismEx do
             {:ok, pid}
         end
 
-        GenServer.call(pid, {:lock, tenant, keys, global_owner_id, opts})
+      GenServer.call(pid, {:lock, tenant, keys, global_owner_id, opts})
     end
 
     wrapped_retry_lock_func = fn ->
       Util.retry(lock_func, opts, [:prism_ex, :lock], %{tenant: tenant})
     end
 
-      Telemetry.span([:prism_ex, :lock], wrapped_retry_lock_func, %{tenant: tenant})
+    Telemetry.span([:prism_ex, :lock], wrapped_retry_lock_func, %{tenant: tenant})
   end
 
   def unlock(tenant, keys, global_owner_id \\ nil, opts \\ []) do

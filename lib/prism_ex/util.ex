@@ -26,7 +26,6 @@ defmodule PrismEx.Util do
     backoff_func = backoff_func(retry_config)
 
     after_func = fn retry_count ->
-
       if retry_count > 0 do
         Telemetry.count(telemetry_namespace ++ [:retries], retry_count, telemetry_metadata)
       end
@@ -54,7 +53,7 @@ defmodule PrismEx.Util do
         fn retry_number -> backoff_base + retry_number * backoff_growth end
 
       :exponential ->
-        fn retry_number -> backoff_base + :math.pow(backoff_growth,retry_number) end
+        fn retry_number -> backoff_base + :math.pow(backoff_growth, retry_number) end
     end
   end
 end

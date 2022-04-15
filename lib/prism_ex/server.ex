@@ -43,24 +43,25 @@ defmodule PrismEx.Server do
     caching_toggle = Keyword.get(opts, :caching, :on)
     owner = LocalOwner.build(:lock, tenant, caller_pid, keys, global_owner_id, opts, state)
 
-   {:ok, client_reply} =
-        do_lock(caching_toggle, owner, opts, state)
+    {:ok, client_reply} = do_lock(caching_toggle, owner, opts, state)
 
     new_state =
       case {caching_toggle, client_reply, opts[:testing][:lock_return]} do
-        {:on, {:ok, :cache}, _} ->
+        {:on, {:ok, :cache}, _test_mock} ->
           refresh_ttl_for_owner(owner, timestamp, state)
 
-        {:on, {:ok, :no_cache}, _} ->
-
-        :eflame.apply(fn ->
-            update_state(owner, timestamp, state)
-        end, [])
+        {:on, {:ok, :no_cache}, _test_mock} ->
+          :eflame.apply(
+            fn ->
+              update_state(owner, timestamp, state)
+            end,
+            []
+          )
 
         {:on, client_reply, mock_return} when client_reply == mock_return ->
           update_state(owner, timestamp, state)
 
-        _ ->
+        _rest_are_errors ->
           state
       end
 
@@ -114,7 +115,7 @@ defmodule PrismEx.Server do
         mock_opt when is_list(mock_opt) ->
           Keyword.get(mock_opt, :unlock_return)
 
-        _ ->
+        _rest_are_non_test ->
           PrismEx.unlock_command(owner, opts)
       end
 
@@ -196,7 +197,7 @@ defmodule PrismEx.Server do
         lock_reply = Keyword.get(mock_opt, :lock_return)
         do_check_prism_lock({:testing, lock_reply}, owner, opts)
 
-      _ ->
+      _rest_are_non_test ->
         do_check_prism_lock(nil, owner, opts)
     end
   end
@@ -205,7 +206,7 @@ defmodule PrismEx.Server do
     {:ok, mocked_reply}
   end
 
-  defp do_check_prism_lock(_, owner, opts) do
+  defp do_check_prism_lock(_testing_flag, owner, opts) do
     PrismEx.lock_command(owner, opts)
     |> case do
       {:ok, :locked} ->

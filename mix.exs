@@ -29,7 +29,7 @@ defmodule PrismEx.MixProject do
       {:poolboy, "~> 1.5"},
       {:telemetry, "~> 1.1"},
       {:retryable_ex, path: "~/side/retryable_ex"},
-      {:eflame, "~> 1.0"},
+      {:eflame, "~> 1.0"}
     ]
   end
 end
