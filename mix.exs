@@ -27,9 +27,7 @@ defmodule PrismEx.MixProject do
       {:nimble_options, "~> 0.4.0"},
       {:uuid, "~> 2.0", hex: :uuid_erl},
       {:poolboy, "~> 1.5"},
-      {:telemetry, "~> 1.1"},
-      {:retryable_ex, path: "~/side/retryable_ex"},
-      {:eflame, "~> 1.0"}
+      {:telemetry, "~> 1.1"}
     ]
   end
 end
