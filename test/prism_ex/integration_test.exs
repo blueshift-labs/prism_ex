@@ -2,6 +2,17 @@ defmodule Test.PrismEx.IntegrationTest do
   use ExUnit.Case, async: false
 
   alias PrismEx.Util
+  alias PrismEx.Option
+
+  setup_all do
+    opts =
+      Application.get_all_env(:prism_ex)
+      |> Option.validate!()
+
+    {:ok, pid} = PrismEx.start_link(opts)
+
+    :ok 
+  end
 
   describe "prism locking with process exit cleanup" do
     test "it locks on unowned resources" do

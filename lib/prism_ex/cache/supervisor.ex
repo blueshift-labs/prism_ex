@@ -1,6 +1,5 @@
 defmodule PrismEx.Cache.Supervisor do
   @moduledoc false
-  @registry PrismEx.Cache.Registry
 
   use Supervisor
 
@@ -12,7 +11,7 @@ defmodule PrismEx.Cache.Supervisor do
   def init(_args) do
     children = [
       PrismEx.Cache.DynamicSupervisor,
-      {Registry, [keys: :unique, name: @registry]}
+      {Registry, [keys: :unique, name: PrismEx.Cache.Registry]}
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

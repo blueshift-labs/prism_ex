@@ -37,31 +37,36 @@ defmodule PrismEx.Server do
 
   @impl true
   def handle_call({:lock, tenant, keys, global_owner_id, opts}, {caller_pid, _ref}, state) do
+
     timestamp = System.os_time(:microsecond)
     state = cleanup_ttl(timestamp, state)
     opts = Keyword.merge(state.opts, opts)
     caching_toggle = Keyword.get(opts, :caching, :on)
     owner = LocalOwner.build(:lock, tenant, caller_pid, keys, global_owner_id, opts, state)
 
-    {:ok, client_reply} = do_lock(caching_toggle, owner, opts, state)
+    client_reply =
+      do_lock(caching_toggle, owner, opts, state)
+      |> case do
+        {:ok, :all_locally_owned} ->
+          {:ok, :cache}
+
+        {:error, :resource_locally_owned_by_another} ->
+          {:error, {:cache, :lock_taken}}
+
+        {:ok, [1, _]} ->
+          {:ok, :no_cache}
+
+        {:ok, -1} ->
+          {:error, {:no_cache, :lock_taken}}
+      end
 
     new_state =
-      case {caching_toggle, client_reply, opts[:testing][:lock_return]} do
-        {:on, {:ok, :cache}, _test_mock} ->
-          refresh_ttl_for_owner(owner, timestamp, state)
-
-        {:on, {:ok, :no_cache}, _test_mock} ->
-          :eflame.apply(
-            fn ->
-              update_state(owner, timestamp, state)
-            end,
-            []
-          )
-
-        {:on, client_reply, mock_return} when client_reply == mock_return ->
+      {caching_toggle, client_reply}
+      |> case do
+        {:on, {:ok, :no_cache}} ->
           update_state(owner, timestamp, state)
 
-        _rest_are_errors ->
+        _rest_dont_update ->
           state
       end
 
@@ -81,7 +86,12 @@ defmodule PrismEx.Server do
       |> cleanup_owners([owner])
       |> cleanup_timestamps([owner])
 
-    {:ok, client_reply} = do_unlock(owner, opts)
+    client_reply =
+      PrismEx.unlock_command(owner, opts)
+      |> case do
+        {:ok, 1} -> :ok
+        {:ok, -1} -> :error
+      end
 
     {:reply, client_reply, new_state}
   end
@@ -91,35 +101,16 @@ defmodule PrismEx.Server do
 
     check_local_lock(owner, state)
     |> case do
-      {:ok, :all_locally_owned} ->
-        client_reply = {:ok, :cache}
-        {:ok, client_reply}
-
       {:ok, :not_all_locally_owned} ->
-        {:ok, client_reply} = check_prism_lock(owner, opts)
-        {:ok, client_reply}
+        check_prism_lock(owner, opts)
 
-      {:error, :resource_locally_owned_by_another} ->
-        client_reply = {:error, {:cache, :lock_taken}}
-        {:ok, client_reply}
+      reply ->
+        reply
     end
   end
 
   defp do_lock(:off, owner, opts, _state) do
     check_prism_lock(owner, opts)
-  end
-
-  defp do_unlock(owner, opts) do
-    client_reply =
-      case Keyword.get(opts, :testing, nil) do
-        mock_opt when is_list(mock_opt) ->
-          Keyword.get(mock_opt, :unlock_return)
-
-        _rest_are_non_test ->
-          PrismEx.unlock_command(owner, opts)
-      end
-
-    {:ok, client_reply}
   end
 
   @impl true
@@ -192,40 +183,40 @@ defmodule PrismEx.Server do
   end
 
   defp check_prism_lock(owner, opts) do
-    case Keyword.get(opts, :testing, nil) do
-      mock_opt when is_list(mock_opt) ->
-        lock_reply = Keyword.get(mock_opt, :lock_return)
-        do_check_prism_lock({:testing, lock_reply}, owner, opts)
-
-      _rest_are_non_test ->
-        do_check_prism_lock(nil, owner, opts)
-    end
-  end
-
-  defp do_check_prism_lock({:testing, mocked_reply}, _owner, _opts) do
-    {:ok, mocked_reply}
-  end
-
-  defp do_check_prism_lock(_testing_flag, owner, opts) do
     PrismEx.lock_command(owner, opts)
-    |> case do
-      {:ok, :locked} ->
-        client_reply = {:ok, :no_cache}
-        {:ok, client_reply}
-
-      {:error, :lock_taken} ->
-        client_reply = {:error, {:no_cache, :lock_taken}}
-        {:ok, client_reply}
-    end
+    # case Keyword.get(opts, :testing, nil) do
+    #   mock_opt when is_list(mock_opt) ->
+    #     lock_reply = Keyword.get(mock_opt, :lock_return)
+    #     do_check_prism_lock({:testing, lock_reply}, owner, opts)
+    #
+    #   _rest_are_non_test ->
+    #     do_check_prism_lock(nil, owner, opts)
+    # end
   end
 
-  defp refresh_ttl_for_owner(old_owner, timestamp, state) do
-    new_owner = LocalOwner.refresh_ttl(old_owner, timestamp)
+  # defp do_check_prism_lock({:testing, mocked_reply}, _owner, _opts) do
+  #   {:ok, mocked_reply}
+  # end
+  #
+  # defp do_check_prism_lock(_testing_flag, owner, opts) do
+  #   |> case do
+  #     {:ok, :locked} ->
+  #       client_reply = {:ok, :no_cache}
+  #       {:ok, client_reply}
+  #
+  #     {:error, :lock_taken} ->
+  #       client_reply = {:error, {:no_cache, :lock_taken}}
+  #       {:ok, client_reply}
+  #   end
+  # end
 
-    state
-    |> update_owners(old_owner, new_owner)
-    |> update_ttl_timestamps(old_owner, new_owner)
-  end
+  # defp refresh_ttl_for_owner(old_owner, timestamp, state) do
+  #   new_owner = LocalOwner.refresh_ttl(old_owner, timestamp)
+  #
+  #   state
+  #   |> update_owners(old_owner, new_owner)
+  #   |> update_ttl_timestamps(old_owner, new_owner)
+  # end
 
   defp update_state(old_owner, timestamp, state) do
     new_owner = LocalOwner.successfully_locked(old_owner, timestamp)

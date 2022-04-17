@@ -5,10 +5,12 @@ defmodule PrismEx.Option do
   """
 
   def validate!(opts) do
-    NimbleOptions.validate!(opts, schema())
+    schema(opts)
+    |> NimbleOptions.docs()
+    NimbleOptions.validate!(opts, schema(opts))
   end
 
-  def schema do
+  def schema(opts) do
     [
       lock_defaults: [
         required: true,
@@ -104,26 +106,10 @@ defmodule PrismEx.Option do
       ],
       testing: [
         required: false,
-        type: :keyword_list,
+        type: :boolean,
         doc: """
-        these options should only be useful for mocking returns to network calls
-        """,
-        keys: [
-          lock_return: [
-            required: false,
-            type: :any,
-            doc: """
-            defines the return value from a prism network call for lock
-            """
-          ],
-          unlock_return: [
-            required: false,
-            type: :any,
-            doc: """
-            defines the return value from a prism network call for unlock
-            """
-          ]
-        ]
+        when testing is true all calls to prism will be successful and no prism service will need to be running
+        """
       ]
     ]
   end

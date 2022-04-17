@@ -70,13 +70,13 @@ defmodule PrismEx do
         ["OWNER", owner.global_id, "TTL", owner.ttl]
 
     case prism_command(:lock, lock, owner.tenant, opts) do
-      {:ok, [1, _owned_resources]} ->
+      {:ok, [1  | _owned_resources]} = reply ->
         Telemetry.count([:prism_ex, :lock, :success], 1, %{tenant: owner.tenant})
-        {:ok, :locked}
+        reply
 
-      {:ok, _lock_contention} ->
+      {:ok, _} = reply ->
         Telemetry.count([:prism_ex, :lock, :failure], 1, %{tenant: owner.tenant})
-        {:error, :lock_taken}
+        reply
     end
   end
 
@@ -86,17 +86,35 @@ defmodule PrismEx do
     unlock = ["UNLOCK", owner.tenant, owner.namespace] ++ keys ++ ["OWNER", owner.global_id]
 
     case prism_command(:unlock, unlock, owner.tenant, opts) do
-      {:ok, 1} ->
+      {:ok, 1} = reply ->
         Telemetry.count([:prism_ex, :unlock, :success], 1, %{tenant: owner.tenant})
-        :ok
+        reply
 
-      {:ok, -1} ->
+      {:ok, -1} = reply ->
         Telemetry.count([:prism_ex, :unlock, :failure], 1, %{tenant: owner.tenant})
-        :error
+        reply
     end
   end
 
   defp prism_command(cmd_atom, cmd_list, tenant, opts) do
+    is_testing = Keyword.get(opts, :testing, false)
+
+    if is_testing do
+      do_prism_command(cmd_atom, cmd_list, tenant, opts, :testing)
+    else
+      do_prism_command(cmd_atom, cmd_list, tenant, opts, nil)
+    end
+  end
+
+  defp do_prism_command(:lock, cmd_list, tenant, opts, :testing) do
+    {:ok, [1, nil]}
+  end
+
+  defp do_prism_command(:unlock, cmd_list, tenant, opts, :testing) do
+    {:ok, 1}
+  end
+
+  defp do_prism_command(cmd_atom, cmd_list, tenant, opts, _) do
     telemetry = [:prism_ex, :prism_request, cmd_atom]
 
     attempt_fun = fn ->

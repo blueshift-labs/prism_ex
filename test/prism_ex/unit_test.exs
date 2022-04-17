@@ -6,10 +6,7 @@ defmodule Test.PrismEx.UnitTest do
 
   setup_all do
     testing_opts = [
-      testing: [
-        lock_return: {:ok, :mocked_lock_return},
-        unlock_return: {:ok, :mocked_unlock_return}
-      ]
+      testing: true
     ]
 
     opts =
@@ -17,7 +14,17 @@ defmodule Test.PrismEx.UnitTest do
       |> Keyword.merge(testing_opts)
       |> Option.validate!()
 
-    [opts: opts]
+    Process.sleep(50)
+
+    {:ok, pid} = PrismEx.start_link(opts)
+
+    cleanup_fun = fn ->
+      Process.alive?(pid)
+      :ok = Supervisor.stop(pid, :normal)
+    end
+
+
+    [opts: opts, on_exit: cleanup_fun]
   end
 
   describe "local cache" do
@@ -26,7 +33,7 @@ defmodule Test.PrismEx.UnitTest do
       keys = [1]
       opts = Keyword.merge(opts, ttl: 100)
 
-      {:ok, :mocked_lock_return} = PrismEx.lock(tenant, keys, nil, opts)
+      {:ok, :no_cache} = PrismEx.lock(tenant, keys, nil, opts)
 
       {:ok, :cache} = PrismEx.lock(tenant, keys, nil, opts)
 
@@ -36,8 +43,8 @@ defmodule Test.PrismEx.UnitTest do
 
       Process.sleep(100)
 
-      {:ok, :mocked_lock_return} = PrismEx.lock(tenant, keys, nil, opts)
-      {:ok, :mocked_unlock_return} = PrismEx.unlock(tenant, keys, nil, opts)
+      {:ok, :no_cache} = PrismEx.lock(tenant, keys, nil, opts)
+      :ok = PrismEx.unlock(tenant, keys, nil, opts)
     end
 
     test "should clear when <ttl> time passes for global_id locks", %{opts: opts} do
@@ -46,12 +53,12 @@ defmodule Test.PrismEx.UnitTest do
       opts = Keyword.merge(opts, ttl: 100)
       global_id = Util.uuid()
 
-      {:ok, :mocked_lock_return} = PrismEx.lock(tenant, keys, global_id, opts)
+      {:ok, :no_cache} = PrismEx.lock(tenant, keys, global_id, opts)
 
       Process.sleep(100)
 
-      {:ok, :mocked_lock_return} = PrismEx.lock(tenant, keys, global_id, opts)
-      {:ok, :mocked_unlock_return} = PrismEx.unlock(tenant, keys, global_id, opts)
+      {:ok, :no_cache} = PrismEx.lock(tenant, keys, global_id, opts)
+      :ok = PrismEx.unlock(tenant, keys, global_id, opts)
     end
   end
 end

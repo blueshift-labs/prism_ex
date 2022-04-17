@@ -18,7 +18,7 @@ defmodule PrismEx.MixProject do
   end
 
   defp elixirc_paths(:test), do: ["test/support", "lib"]
-  defp elixirc_paths(_), do: ["lib"]
+  defp elixirc_paths(_), do: ["lib", "vendor/retryable_ex/lib"]
 
   defp deps do
     [
