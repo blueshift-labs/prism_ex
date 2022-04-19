@@ -9,9 +9,9 @@ defmodule Test.PrismEx.IntegrationTest do
       Application.get_all_env(:prism_ex)
       |> Option.validate!()
 
-    {:ok, pid} = PrismEx.start_link(opts)
+    {:ok, _pid} = PrismEx.start_link(opts)
 
-    :ok 
+    :ok
   end
 
   describe "prism locking with process exit cleanup" do

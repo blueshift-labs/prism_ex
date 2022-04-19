@@ -70,7 +70,7 @@ defmodule PrismEx do
         ["OWNER", owner.global_id, "TTL", owner.ttl]
 
     case prism_command(:lock, lock, owner.tenant, opts) do
-      {:ok, [1  | _owned_resources]} = reply ->
+      {:ok, [1 | _owned_resources]} = reply ->
         Telemetry.count([:prism_ex, :lock, :success], 1, %{tenant: owner.tenant})
         reply
 
@@ -106,15 +106,15 @@ defmodule PrismEx do
     end
   end
 
-  defp do_prism_command(:lock, cmd_list, tenant, opts, :testing) do
+  defp do_prism_command(:lock, _cmd_list, _tenant, _opts, :testing) do
     {:ok, [1, nil]}
   end
 
-  defp do_prism_command(:unlock, cmd_list, tenant, opts, :testing) do
+  defp do_prism_command(:unlock, _cmd_list, _tenant, _opts, :testing) do
     {:ok, 1}
   end
 
-  defp do_prism_command(cmd_atom, cmd_list, tenant, opts, _) do
+  defp do_prism_command(cmd_atom, cmd_list, tenant, opts, _testing) do
     telemetry = [:prism_ex, :prism_request, cmd_atom]
 
     attempt_fun = fn ->

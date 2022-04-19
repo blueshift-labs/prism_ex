@@ -28,22 +28,20 @@ defmodule PrismEx.Supervisor do
     Keyword.get(opts, :testing, false)
     |> if do
       :cache_only
-    else 
+    else
       :with_network
     end
     |> children_for_env(opts)
   end
 
   defp children_for_env(:cache_only, _opts) do
-    children = [
-      PrismEx.Cache.Supervisor
-    ]
+    [PrismEx.Cache.Supervisor]
   end
 
-  defp children_for_env(_, opts) do
+  defp children_for_env(_cache_flag, opts) do
     {pool_size, opts} = pop_in(opts, [:connection, :pool_size])
 
-    children = [
+    [
       PrismEx.Cache.Supervisor,
       :poolboy.child_spec(:redix_pool, pool_config(pool_size), opts[:connection])
     ]

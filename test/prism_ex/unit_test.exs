@@ -23,7 +23,6 @@ defmodule Test.PrismEx.UnitTest do
       :ok = Supervisor.stop(pid, :normal)
     end
 
-
     [opts: opts, on_exit: cleanup_fun]
   end
 

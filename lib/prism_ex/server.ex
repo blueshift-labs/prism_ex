@@ -37,7 +37,6 @@ defmodule PrismEx.Server do
 
   @impl true
   def handle_call({:lock, tenant, keys, global_owner_id, opts}, {caller_pid, _ref}, state) do
-
     timestamp = System.os_time(:microsecond)
     state = cleanup_ttl(timestamp, state)
     opts = Keyword.merge(state.opts, opts)

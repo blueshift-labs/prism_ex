@@ -5,12 +5,13 @@ defmodule PrismEx.Option do
   """
 
   def validate!(opts) do
-    schema(opts)
+    schema()
     |> NimbleOptions.docs()
-    NimbleOptions.validate!(opts, schema(opts))
+
+    NimbleOptions.validate!(opts, schema())
   end
 
-  def schema(opts) do
+  def schema() do
     [
       lock_defaults: [
         required: true,

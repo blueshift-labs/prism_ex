@@ -5,8 +5,7 @@ defmodule PrismEx.Util do
   alias PrismEx.Telemetry
 
   def uuid do
-    :uuid.get_v4()
-    |> :uuid.uuid_to_string(:binary_standard)
+    UUID.uuid4()
   end
 
   def retry(fun, opts, telemetry_namespace \\ [], telemetry_metadata \\ %{}) do
