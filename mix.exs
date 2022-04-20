@@ -28,7 +28,7 @@ defmodule PrismEx.MixProject do
       {:elixir_uuid, "~> 1.6", hex: :uuid_utils},
       {:poolboy, "~> 1.5"},
       {:telemetry, "~> 1.1"},
-      {:retryable_ex, path: "./vendor/retryable_ex"}
+      {:retryable_ex, git: "https://github.com/blueshift-labs/retryable_ex.git", tag: "0.1.0"}
     ]
   end
 end
