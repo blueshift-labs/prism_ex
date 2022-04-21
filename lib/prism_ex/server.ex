@@ -9,23 +9,45 @@ defmodule PrismEx.Server do
   use GenServer
 
   alias PrismEx.LocalOwner
+  alias PrismEx.Telemetry
 
-  def start_link(name: name, opts: opts) do
-    via = {:via, Registry, {@registry, name}}
-    GenServer.start_link(__MODULE__, opts, name: via)
+  def start_link(name: tenant, opts: opts) do
+    via = {:via, Registry, {@registry, tenant}}
+    GenServer.start_link(__MODULE__, [opts, tenant], name: via)
   end
 
   @impl true
-  def init(opts) do
+  def init([opts, tenant]) do
+    Process.send_after(self(), :metrics, :timer.seconds(1))
+
     {
       :ok,
       %{
+        tenant: tenant,
         opts: opts,
         owners: %{},
         owned_resources: MapSet.new(),
         ttl_timestamps: :gb_trees.empty()
       }
     }
+  end
+
+  def handle_info(:metrics, state) do
+    [
+      {:total_heap_size, t_heap},
+      {:heap_size, heap},
+      {:stack_size, stack}
+    ] =
+      self()
+      |> Process.info()
+      |> Keyword.take([:total_heap_size, :heap_size, :stack_size])
+
+    Telemetry.measure([:prism_ex, :lock_pid, :total_heap_size], t_heap, %{tenant: state.tenant})
+    Telemetry.measure([:prism_ex, :lock_pid, :heap_size], heap, %{tenant: state.tenant})
+    Telemetry.measure([:prism_ex, :lock_pid, :stack_size], stack, %{tenant: state.tenant})
+
+    Process.send_after(self(), :metrics, :timer.seconds(1))
+    {:noreply, state}
   end
 
   # client replies in [
@@ -47,15 +69,17 @@ defmodule PrismEx.Server do
       do_lock(caching_toggle, owner, opts, state)
       |> case do
         {:ok, :all_locally_owned} ->
+          Telemetry.count([:prism_ex, :cache, :success], 1, %{tenant: owner.tenant})
           {:ok, :cache}
 
         {:error, :resource_locally_owned_by_another} ->
+          Telemetry.count([:prism_ex, :cache, :rejected], 1, %{tenant: owner.tenant})
           {:error, {:cache, :lock_taken}}
 
         {:ok, [1, _]} ->
           {:ok, :no_cache}
 
-        {:ok, -1} ->
+        {:ok, [-1, _]} ->
           {:error, {:no_cache, :lock_taken}}
       end
 
@@ -281,12 +305,29 @@ defmodule PrismEx.Server do
     put_in(state, [:owned_resources], new_owned_resources)
   end
 
-  defp cleanup_owners(state, owners) do
+  defp cleanup_owners(state, []) do
+    state
+  end
+
+  defp cleanup_owners(state, [%{cache_group: cg} = _owner | _rest] = owners) do
     owners
     |> Enum.reduce(state, fn owner, acc ->
       {_, new_acc} = pop_in(acc, [:owners, owner.cache_group, owner.cache_key])
       new_acc
     end)
+    |> maybe_cleanup_empty_cache_group(cg)
+  end
+
+  defp maybe_cleanup_empty_cache_group(state, cache_group) do
+    get_in(state, [:owners, Access.key(cache_group, %{})])
+    |> case do
+      map when map_size(map) == 0 ->
+        {_popped, new_state} = pop_in(state, [:owners, cache_group])
+        new_state
+
+      _rest ->
+        state
+    end
   end
 
   defp cleanup_timestamps(state, owners) do

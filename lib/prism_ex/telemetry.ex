@@ -3,6 +3,11 @@ defmodule PrismEx.Telemetry do
     :telemetry.execute(namespace, %{count: count}, metadata)
   end
 
+  def measure(namespace, words \\ 1, metadata \\ %{}) do
+    bytes = words * 8
+    :telemetry.execute(namespace, %{total: bytes}, metadata)
+  end
+
   def span(namespace, func, metadata) do
     start = System.monotonic_time()
 
